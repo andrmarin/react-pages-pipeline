@@ -31,6 +31,11 @@ body {
   margin-top: 0;
 }
 
+.feature {
+  font-weight: 600;
+  color: #6d28d9;
+}
+
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;

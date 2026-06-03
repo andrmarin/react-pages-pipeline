@@ -11,6 +11,7 @@ export default function App() {
     <main className="card">
       <h1>Demo App</h1>
       <p>Hello from the demo app 👋</p>
+      <p className="feature">Feature A</p>
 
       <dl>
         <dt>Version</dt>
