@@ -167,8 +167,12 @@ bash scripts/setup-environments.sh --protect-prod  # also require a reviewer on 
 bash scripts/enable-pages.sh
 
 # 3. (Optional) Protect main: block deletion, force-pushes, and direct pushes
-#    (changes must go through a PR), enforced for admins too.
+#    (changes must go through a PR) + require linear history, enforced for admins.
 bash scripts/protect-main.sh
+
+# 4. (Optional) Squash-only merge policy: make "Squash and merge" the only way to
+#    merge a PR (no merge/rebase commits), auto-delete the head branch on merge.
+bash scripts/set-merge-policy.sh
 ```
 
 Pass `--repo owner/name` to any script if you're not running from inside the
@@ -176,6 +180,10 @@ repo. `--protect-prod` adds a required reviewer + main-only branch policy to the
 `production` environment (needs a public repo or a paid plan for private repos).
 `scripts/protect-main.sh` also needs a public repo or a paid plan, and accepts
 `--branch <name>` and `--reviews <N>` (default 0 required approvals).
+
+Together, `protect-main.sh` (requires linear history) and `set-merge-policy.sh`
+(squash-only) keep `main` a **clean, linear history with no merge commits** —
+every PR collapses to a single commit titled after the PR.
 
 ### Manual (equivalent, via the UI)
 
@@ -194,6 +202,11 @@ repo. `--protect-prod` adds a required reviewer + main-only branch policy to the
 
 3. **(Recommended) Protect production.** On the `production` environment, add a
    **required reviewer** and/or restrict it to the `main` branch.
+
+4. **(Recommended) Squash-only merges.** Repo → **Settings → General → Pull
+   Requests** → enable **Allow squash merging** only (uncheck merge & rebase),
+   tick **Automatically delete head branches**. Then **Settings → Branches →
+   main** → enable **Require linear history**.
 
 No other secrets are needed — `GITHUB_TOKEN` is provided automatically and is
 what publishes to the `gh-pages` branch.
