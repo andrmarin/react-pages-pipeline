@@ -42,6 +42,7 @@ if ! gh api --method PUT "repos/$REPO/branches/$BRANCH/protection" \
   "enforce_admins": true,
   "required_pull_request_reviews": { "required_approving_review_count": $REVIEWS },
   "restrictions": null,
+  "required_linear_history": true,
   "allow_force_pushes": false,
   "allow_deletions": false
 }
@@ -56,4 +57,7 @@ echo "Done. '$BRANCH' is now protected:"
 echo "  - deletion blocked"
 echo "  - force-pushes blocked"
 echo "  - direct pushes blocked (changes require a pull request)"
+echo "  - linear history required (no merge commits)"
 echo "  - rules enforced for admins too"
+echo
+echo "Tip: run scripts/set-merge-policy.sh to make squash the only merge button."
