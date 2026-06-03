@@ -10,13 +10,17 @@ on:
         description: GitHub Environment + Pages subfolder (production | staging | development)
         required: true
         type: string
+      project:
+        description: Project name; used as the release tag prefix (e.g. desktop -> desktop-v1.0.0)
+        required: true
+        type: string
       ref:
         description: Git ref to build (defaults to the triggering ref)
         required: false
         type: string
         default: ''
       create_tag:
-        description: Create an immutable v<version> git tag (production releases only)
+        description: Create an immutable <project>-v<version> git tag (production releases only)
         required: false
         type: boolean
         default: false
@@ -68,22 +72,24 @@ jobs:
           VITE_S3_BUCKET: ${{ vars.S3_BUCKET }}
         run: npm run build
 
-      # Production only: tag the released commit. Fails loudly if the tag already
-      # exists, which guarantees version.txt was bumped for this release.
+      # Production only: tag the released commit as <project>-v<version>. Fails
+      # loudly if the tag already exists, which guarantees version.txt was bumped
+      # for this release. The project prefix keeps tags distinct per project in a
+      # monorepo (e.g. desktop-v1.0.0, mobile-v2.3.1).
       - name: Create release tag
         if: ${{ inputs.create_tag }}
         env:
-          VERSION: v${{ steps.version.outputs.value }}
+          TAG: ${{ inputs.project }}-v${{ steps.version.outputs.value }}
         run: |
           git fetch --tags --quiet
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
-            echo "::error::Tag $VERSION already exists. Bump version.txt before deploying to production."
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists. Bump version.txt before deploying to production."
             exit 1
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
 
       # keep_files: true means we only touch this environment's folder and leave
       # the other environments' folders on gh-pages untouched.
@@ -101,7 +107,9 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
           ENVIRONMENT: ${{ inputs.environment }}
+          PROJECT: ${{ inputs.project }}
           VERSION: ${{ steps.version.outputs.value }}
+          TAGGED: ${{ inputs.create_tag }}
         run: |
           URL="https://${OWNER,,}.github.io/${REPO}/${ENVIRONMENT}/"
           {
@@ -109,7 +117,11 @@ jobs:
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
+            echo "| Project | \`${PROJECT}\` |"
             echo "| Environment | \`${ENVIRONMENT}\` |"
             echo "| Version | \`${VERSION}\` |"
             echo "| URL | ${URL} |"
+            if [ "$TAGGED" = "true" ]; then
+              echo "| Release tag | \`${PROJECT}-v${VERSION}\` |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

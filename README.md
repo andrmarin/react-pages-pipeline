@@ -47,7 +47,7 @@ under each subfolder.
 | --- | --- | --- |
 | Push to `develop` | `development` | `…/development/` |
 | Push to `main` | `staging` | `…/staging/` |
-| Push to `main` **that changes `version.txt`** | `production` | `…/production/` + git tag `v<version>` |
+| Push to `main` **that changes `version.txt`** | `production` | `…/production/` + git tag `desktop-v<version>` |
 | Manual run (any branch) | chosen env | that env's folder |
 
 URLs follow this pattern (lowercase owner):
@@ -70,19 +70,25 @@ The pipeline is split in two workflows:
 ### Versioning & release tags
 
 [`version.txt`](./version.txt) is the single source of truth. On a **production**
-deploy the pipeline creates an immutable git tag `v<version>`. If that tag
-already exists the production deploy **fails**, which guarantees you bumped the
-version for every release and gives you a tagged commit to diff or roll back to.
+deploy the pipeline creates an immutable git tag **`desktop-v<version>`** — the
+`desktop-` prefix is this project's name, so multiple projects in the repo tag
+independently (e.g. `desktop-v1.0.0`, `mobile-v2.3.1`). If that tag already
+exists the production deploy **fails**, which guarantees you bumped the version
+for every release and gives you a tagged commit to diff or roll back to.
+
+The project name is passed to the reusable workflow as `project: desktop` from
+every call in [`deploy.yml`](./.github/workflows/deploy.yml); a new project gets
+its own `deploy.yml` with a different name.
 
 **To cut a production release:** bump `version.txt` (e.g. `1.0.0` → `1.1.0`) and
-push to `main`. This deploys staging *and* production, and tags `v1.1.0`.
+push to `main`. This deploys staging *and* production, and tags `desktop-v1.1.0`.
 
 ### Deploy any branch manually
 
 GitHub → **Actions** → **Deploy** → **Run workflow** → pick the **branch** and a
 target **environment**. The selected branch is built and published to that
 environment's folder (`development` / `staging` / `production`), replacing
-whatever was there. Deploying to `production` also creates the `v<version>` tag.
+whatever was there. Deploying to `production` also creates the `desktop-v<version>` tag.
 
 ---
 

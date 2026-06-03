@@ -1,11 +1,16 @@
 name: Deploy
 
-# Trigger workflow. Maps branches/manual runs to environments and delegates the
-# actual build + publish to the reusable build-deploy.yml workflow.
+# Trigger workflow for the "desktop" project. Maps branches/manual runs to
+# environments and delegates the build + publish to the reusable build-deploy.yml.
+#
+# Monorepo note: this is one project's deploy workflow. Its project name (used as
+# the release-tag prefix, e.g. desktop-v1.0.0) is passed to build-deploy.yml as
+# `project: desktop` on every call below. A new project gets its own copy of this
+# file with a different project name.
 #
 #   push develop                  -> development  (/development/)
 #   push main                     -> staging      (/staging/)
-#   push main + version.txt bump  -> production   (/production/) + git tag
+#   push main + version.txt bump  -> production   (/production/) + tag desktop-v<version>
 #   manual (workflow_dispatch)    -> deploy any branch to the chosen environment
 #                                    (publishes to that env's folder; no feature paths)
 on:
@@ -42,6 +47,7 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: development
+      project: desktop
 
   # --- Automatic: main -> staging --------------------------------------------
   staging:
@@ -51,6 +57,7 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: staging
+      project: desktop
 
   # --- Detect a version.txt change on main to gate production ----------------
   check-version:
@@ -82,6 +89,7 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: production
+      project: desktop
       create_tag: true
 
   # --- Manual: deploy the selected branch to the chosen environment ----------
@@ -94,5 +102,6 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: ${{ inputs.environment }}
+      project: desktop
       ref: ${{ github.ref }}
       create_tag: ${{ inputs.environment == 'production' }}
