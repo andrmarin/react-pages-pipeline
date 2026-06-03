@@ -3,6 +3,10 @@ name: Build and Deploy
 # Reusable workflow: builds the app for one environment and publishes it to that
 # environment's subfolder of the gh-pages branch (production | staging |
 # development). Called by deploy.yml. Not triggered directly.
+#
+# Version gate: every deploy must raise the version. The version currently live
+# in an environment is recorded in its <env>/version.json on gh-pages; this job
+# refuses to deploy unless version.txt is a strictly higher semver than that.
 on:
   workflow_call:
     inputs:
@@ -24,6 +28,11 @@ on:
         required: false
         type: boolean
         default: false
+      on_no_bump:
+        description: Behavior when version.txt is not greater than the env's deployed version (skip | fail)
+        required: false
+        type: string
+        default: skip
 
 jobs:
   build-deploy:
@@ -49,21 +58,53 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0 # full history so we can read/create tags
 
-      - name: Read version from version.txt
-        id: version
-        run: echo "value=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+      # VERSION GATE — the heart of the release policy.
+      # current = version already deployed to this env (from <env>/version.json on
+      # gh-pages; 0.0.0 if never deployed). new = version.txt. Deploy only if
+      # new > current (semver). Manual deploys fail; auto deploys skip cleanly.
+      - name: Version gate
+        id: gate
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ON_NO_BUMP: ${{ inputs.on_no_bump }}
+        run: |
+          NEW=$(tr -d '[:space:]' < version.txt)
+          CURRENT=""
+          if git fetch --no-tags --depth=1 origin gh-pages >/dev/null 2>&1; then
+            CURRENT=$(git show FETCH_HEAD:"$ENVIRONMENT/version.json" 2>/dev/null \
+              | sed -n 's/.*"message":"v\?\([0-9][^"]*\)".*/\1/p')
+          fi
+          [ -z "$CURRENT" ] && CURRENT="0.0.0"
+          echo "new=$NEW"         >> "$GITHUB_OUTPUT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          if [ "$NEW" != "$CURRENT" ] && \
+             [ "$(printf '%s\n%s\n' "$CURRENT" "$NEW" | sort -V | tail -n1)" = "$NEW" ]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+            echo "Version gate OK for '$ENVIRONMENT': $CURRENT -> $NEW"
+          else
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            MSG="version.txt ($NEW) is not greater than the version already deployed to '$ENVIRONMENT' ($CURRENT). Bump version.txt to deploy."
+            if [ "$ON_NO_BUMP" = "fail" ]; then
+              echo "::error::$MSG"
+              exit 1
+            fi
+            echo "::warning::Skipping deploy — $MSG"
+          fi
 
       - name: Setup Node
+        if: steps.gate.outputs.proceed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        if: steps.gate.outputs.proceed == 'true'
         run: npm ci
 
       # `npm run build` runs `tsc` first, so a type error fails the deploy here.
       - name: Type-check and build
+        if: steps.gate.outputs.proceed == 'true'
         env:
           BASE_PATH: /${{ github.event.repository.name }}/${{ inputs.environment }}/
           VITE_APP_ENV: ${{ inputs.environment }}
@@ -72,14 +113,13 @@ jobs:
           VITE_S3_BUCKET: ${{ vars.S3_BUCKET }}
         run: npm run build
 
-      # Production only: tag the released commit as <project>-v<version>. Fails
-      # loudly if the tag already exists, which guarantees version.txt was bumped
-      # for this release. The project prefix keeps tags distinct per project in a
-      # monorepo (e.g. desktop-v1.0.0, mobile-v2.3.1).
+      # Production only: tag the released commit as <project>-v<version>. The
+      # version gate already guarantees the version rose, so this won't collide;
+      # the existence check stays as a backstop.
       - name: Create release tag
-        if: ${{ inputs.create_tag }}
+        if: ${{ inputs.create_tag && steps.gate.outputs.proceed == 'true' }}
         env:
-          TAG: ${{ inputs.project }}-v${{ steps.version.outputs.value }}
+          TAG: ${{ inputs.project }}-v${{ steps.gate.outputs.new }}
         run: |
           git fetch --tags --quiet
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -91,13 +131,13 @@ jobs:
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
-      # Emit a shields.io "endpoint" JSON so the README badges can show the
-      # version currently deployed to this environment. Published alongside the
-      # build at /<environment>/version.json.
+      # Records the deployed version for this env. This file is BOTH the README
+      # badge source AND the gate's baseline for the next deploy.
       - name: Write version badge endpoint
+        if: steps.gate.outputs.proceed == 'true'
         env:
           ENVIRONMENT: ${{ inputs.environment }}
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ steps.gate.outputs.new }}
         run: |
           case "$ENVIRONMENT" in
             production) COLOR=brightgreen ;;
@@ -110,34 +150,49 @@ jobs:
       # keep_files: true means we only touch this environment's folder and leave
       # the other environments' folders on gh-pages untouched.
       - name: Publish to GitHub Pages
+        id: publish
+        if: steps.gate.outputs.proceed == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           destination_dir: ${{ inputs.environment }}
           keep_files: true
-          commit_message: "deploy ${{ inputs.environment }} (v${{ steps.version.outputs.value }})"
+          commit_message: "deploy ${{ inputs.environment }} v${{ steps.gate.outputs.new }} (was v${{ steps.gate.outputs.current }})"
 
       - name: Job summary
+        if: always() && steps.gate.outcome == 'success'
         env:
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
           ENVIRONMENT: ${{ inputs.environment }}
           PROJECT: ${{ inputs.project }}
-          VERSION: ${{ steps.version.outputs.value }}
+          CURRENT: ${{ steps.gate.outputs.current }}
+          NEW: ${{ steps.gate.outputs.new }}
+          PROCEED: ${{ steps.gate.outputs.proceed }}
+          PUBLISH: ${{ steps.publish.outcome }}
           TAGGED: ${{ inputs.create_tag }}
         run: |
           URL="https://${OWNER,,}.github.io/${REPO}/${ENVIRONMENT}/"
+          if [ "$PROCEED" = "true" ] && [ "$PUBLISH" = "success" ]; then
+            STATUS="✅ Deployed"
+          elif [ "$PROCEED" = "false" ]; then
+            STATUS="⏭️ Skipped — version not increased"
+          else
+            STATUS="❌ Failed"
+          fi
           {
-            echo "### Deployed 🚀"
+            echo "### $STATUS"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
             echo "| Project | \`${PROJECT}\` |"
             echo "| Environment | \`${ENVIRONMENT}\` |"
-            echo "| Version | \`${VERSION}\` |"
-            echo "| URL | ${URL} |"
-            if [ "$TAGGED" = "true" ]; then
-              echo "| Release tag | \`${PROJECT}-v${VERSION}\` |"
+            echo "| Version | \`${CURRENT}\` → \`${NEW}\` |"
+            if [ "$PROCEED" = "true" ] && [ "$PUBLISH" = "success" ]; then
+              echo "| URL | ${URL} |"
+              if [ "$TAGGED" = "true" ]; then
+                echo "| Release tag | \`${PROJECT}-v${NEW}\` |"
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
