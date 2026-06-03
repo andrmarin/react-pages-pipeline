@@ -23,6 +23,12 @@ on:
           - staging
           - production
 
+# Default token permission for jobs in this workflow. The deploy jobs below
+# elevate to `contents: write` individually; a reusable workflow can only
+# request up to what its calling job grants.
+permissions:
+  contents: read
+
 # Serialize runs of this trigger workflow per ref.
 concurrency:
   group: deploy-${{ github.event_name }}-${{ github.ref }}
@@ -32,6 +38,8 @@ jobs:
   # --- Automatic: develop -> development -------------------------------------
   development:
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: development
@@ -40,6 +48,8 @@ jobs:
   # --- Automatic: main -> staging --------------------------------------------
   staging:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: staging
@@ -70,6 +80,8 @@ jobs:
   production:
     needs: check-version
     if: needs.check-version.outputs.changed == 'true'
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: production
@@ -98,6 +110,8 @@ jobs:
   # --- Manual: deploy the selected branch to the chosen environment ----------
   deploy-manual:
     needs: prep-manual
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: ${{ inputs.environment }}
