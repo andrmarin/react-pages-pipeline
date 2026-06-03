@@ -1,16 +1,13 @@
 name: Build and Deploy
 
-# Reusable workflow: builds the app for one environment and publishes it to a
-# subfolder of the gh-pages branch. Called by deploy.yml. Not triggered directly.
+# Reusable workflow: builds the app for one environment and publishes it to that
+# environment's subfolder of the gh-pages branch (production | staging |
+# development). Called by deploy.yml. Not triggered directly.
 on:
   workflow_call:
     inputs:
       environment:
-        description: GitHub Environment to use (production | staging | development)
-        required: true
-        type: string
-      subfolder:
-        description: Subfolder on the Pages site to publish into (e.g. staging, feature-foo)
+        description: GitHub Environment + Pages subfolder (production | staging | development)
         required: true
         type: string
       ref:
@@ -36,9 +33,9 @@ jobs:
     permissions:
       contents: write
 
-    # Never let two deploys to the SAME subfolder run at once (avoids clobbering).
+    # Never let two deploys to the SAME environment run at once (avoids clobbering).
     concurrency:
-      group: pages-${{ inputs.subfolder }}
+      group: pages-${{ inputs.environment }}
       cancel-in-progress: false
 
     steps:
@@ -64,7 +61,7 @@ jobs:
       # `npm run build` runs `tsc` first, so a type error fails the deploy here.
       - name: Type-check and build
         env:
-          BASE_PATH: /${{ github.event.repository.name }}/${{ inputs.subfolder }}/
+          BASE_PATH: /${{ github.event.repository.name }}/${{ inputs.environment }}/
           VITE_APP_ENV: ${{ inputs.environment }}
           VITE_AWS_KEY: ${{ vars.AWS_KEY }}
           VITE_AWS_SECRET: ${{ secrets.AWS_SECRET }}
@@ -88,33 +85,31 @@ jobs:
           git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
 
-      # keep_files: true means we only touch our own subfolder and leave the
-      # other environments' folders on gh-pages untouched.
+      # keep_files: true means we only touch this environment's folder and leave
+      # the other environments' folders on gh-pages untouched.
       - name: Publish to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          destination_dir: ${{ inputs.subfolder }}
+          destination_dir: ${{ inputs.environment }}
           keep_files: true
-          commit_message: "deploy ${{ inputs.environment }} -> ${{ inputs.subfolder }} (v${{ steps.version.outputs.value }})"
+          commit_message: "deploy ${{ inputs.environment }} (v${{ steps.version.outputs.value }})"
 
       - name: Job summary
         env:
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
-          SUBFOLDER: ${{ inputs.subfolder }}
           ENVIRONMENT: ${{ inputs.environment }}
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          URL="https://${OWNER,,}.github.io/${REPO}/${SUBFOLDER}/"
+          URL="https://${OWNER,,}.github.io/${REPO}/${ENVIRONMENT}/"
           {
             echo "### Deployed 🚀"
             echo ""
             echo "| Field | Value |"
             echo "| --- | --- |"
             echo "| Environment | \`${ENVIRONMENT}\` |"
-            echo "| Subfolder | \`${SUBFOLDER}\` |"
             echo "| Version | \`${VERSION}\` |"
             echo "| URL | ${URL} |"
           } >> "$GITHUB_STEP_SUMMARY"

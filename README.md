@@ -3,8 +3,8 @@
 A minimal **Vite + React + TypeScript** single page that displays some text, the
 app version, the active environment, and a few placeholder environment variables
 (`AWS_KEY`, `AWS_SECRET`, `S3_BUCKET`). It ships with a **GitHub Actions release
-pipeline** that deploys to **GitHub Pages** across three environments plus
-on-demand feature-branch previews.
+pipeline** that deploys to **GitHub Pages** across three environments
+(production / staging / development).
 
 > ⚠️ **Security note.** Everything passed as a `VITE_*` variable is baked into
 > the static JavaScript bundle and is **publicly visible** in the browser. The
@@ -37,18 +37,18 @@ npm run typecheck  # type-check only
 
 ## How deployments work
 
-GitHub Pages serves a **single site per repo**, so every environment and every
-feature preview is published into its **own subfolder** of the same Pages site
-(on the `gh-pages` branch). Vite's `base` is set per deploy so assets resolve
-correctly under each subfolder.
+GitHub Pages serves a **single site per repo**, so each environment is published
+into its **own subfolder** of the same Pages site (on the `gh-pages` branch).
+There are exactly three subfolders — `development`, `staging`, `production` —
+and nothing else. Vite's `base` is set per deploy so assets resolve correctly
+under each subfolder.
 
 | Trigger | Environment | Published to |
 | --- | --- | --- |
 | Push to `develop` | `development` | `…/development/` |
 | Push to `main` | `staging` | `…/staging/` |
 | Push to `main` **that changes `version.txt`** | `production` | `…/production/` + git tag `v<version>` |
-| Manual run on `main`/`develop` | chosen env | that env's subfolder |
-| Manual run on a **feature branch** | chosen env (label only) | `…/feature-<branch>/` |
+| Manual run (any branch) | chosen env | that env's folder |
 
 URLs follow this pattern (lowercase owner):
 
@@ -77,11 +77,12 @@ version for every release and gives you a tagged commit to diff or roll back to.
 **To cut a production release:** bump `version.txt` (e.g. `1.0.0` → `1.1.0`) and
 push to `main`. This deploys staging *and* production, and tags `v1.1.0`.
 
-### Deploy a feature branch manually
+### Deploy any branch manually
 
 GitHub → **Actions** → **Deploy** → **Run workflow** → pick the **branch** and a
-target **environment**. A feature branch publishes to `…/feature-<branch>/` so it
-never overwrites a real environment.
+target **environment**. The selected branch is built and published to that
+environment's folder (`development` / `staging` / `production`), replacing
+whatever was there. Deploying to `production` also creates the `v<version>` tag.
 
 ---
 
