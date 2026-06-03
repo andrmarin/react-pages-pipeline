@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+#
+# Block direct commits to protected branches (default: main).
+# Shared via core.hooksPath -> .githooks (run scripts/install-hooks.sh once).
+#
+# Emergency override:  ALLOW_PROTECTED_COMMIT=1 git commit ...
+#
+set -euo pipefail
+
+# Space-separated list of branches that may not be committed to directly.
+PROTECTED="main"
+
+branch=$(git symbolic-ref --short -q HEAD || echo "")
+
+for b in $PROTECTED; do
+  if [ "$branch" = "$b" ]; then
+    if [ "${ALLOW_PROTECTED_COMMIT:-0}" = "1" ]; then
+      echo "pre-commit: committing to protected branch '$branch' (override enabled)." >&2
+      exit 0
+    fi
+    echo "✋ pre-commit: direct commits to '$branch' are blocked." >&2
+    echo "   Start a branch instead:  git switch -c my-change" >&2
+    echo "   Emergency override:      ALLOW_PROTECTED_COMMIT=1 git commit ..." >&2
+    exit 1
+  fi
+done
+
+exit 0

@@ -92,7 +92,11 @@ if $MAKE_DEVELOP; then
   git checkout -q main
 fi
 
-# --- 6. wait for gh-pages, then enable Pages ---------------------------------
+# --- 6. install local git hooks (block direct commits to main) ---------------
+# Done after the initial main commit/push so it can't block bootstrap itself.
+bash "$HERE/scripts/install-hooks.sh"
+
+# --- 7. wait for gh-pages, then enable Pages ---------------------------------
 echo "Waiting for the first deploy to create the gh-pages branch (up to ~5 min)…"
 for _ in $(seq 1 30); do
   if gh api "repos/$REPO/branches/gh-pages" >/dev/null 2>&1; then

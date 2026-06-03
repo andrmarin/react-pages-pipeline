@@ -39,6 +39,20 @@ npm run typecheck  # type-check only
 `VITE_APP_VERSION` is read automatically from [`version.txt`](./version.txt) by
 `vite.config.ts`, so you don't set it in `.env.local`.
 
+### Git hooks (block direct commits to `main`)
+
+Tracked hooks live in [`.githooks/`](./.githooks). Enable them once per clone:
+
+```bash
+bash scripts/install-hooks.sh   # sets core.hooksPath -> .githooks
+```
+
+The `pre-commit` hook rejects commits made directly on `main` (point your work at
+a branch instead). It complements the **server-side** branch protection
+(`scripts/protect-main.sh`) — the hook catches mistakes locally before they reach
+GitHub. Emergency override: `ALLOW_PROTECTED_COMMIT=1 git commit ...`.
+`bootstrap.sh` runs this automatically.
+
 ---
 
 ## How deployments work
