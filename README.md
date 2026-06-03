@@ -87,12 +87,48 @@ never overwrites a real environment.
 
 ## One-time GitHub setup
 
-1. **Enable Pages.** Repo → **Settings → Pages** → *Build and deployment* →
-   **Source: Deploy from a branch** → branch **`gh-pages`**, folder **`/ (root)`**.
-   (The `gh-pages` branch is created automatically by the first deploy — run the
-   workflow once, then set this.)
+The scripts in [`scripts/`](./scripts) automate this with the
+[`gh` CLI](https://cli.github.com) (run `gh auth login` first). They run in any
+bash shell — Git Bash, WSL, Linux, or macOS.
 
-2. **Create the three Environments.** Repo → **Settings → Environments** → create
+### One command (recommended)
+
+From a fresh clone/copy of this folder, [`scripts/bootstrap.sh`](./scripts/bootstrap.sh)
+does the whole thing end to end: `git init` + commit → create the GitHub repo →
+create the 3 environments with their variables/secrets → push `main` (and
+`develop`) to trigger the deploys → wait for `gh-pages` → enable Pages.
+
+```bash
+bash scripts/bootstrap.sh my-repo-name --public
+```
+
+Options: positional `repo` (`owner/name` or `name`, default = folder name),
+`--public` / `--private` (default private), `--protect-prod` (required reviewer
+on production), `--no-develop` (skip the develop branch). Requires `gh auth login`.
+
+> Use `--public` on the free plan — GitHub Pages on a **private** repo needs a
+> paid plan (Pro/Team/Enterprise).
+
+### Step by step (if you already have a repo)
+
+```bash
+# 1. Create the 3 environments and set AWS_KEY + S3_BUCKET (vars) and
+#    AWS_SECRET (secret) on each. Idempotent — safe to re-run.
+#    Edit the placeholder values at the top of the script, or override via env vars.
+bash scripts/setup-environments.sh                 # auto-detects the repo
+bash scripts/setup-environments.sh --protect-prod  # also require a reviewer on production
+
+# 2. After your first deploy has created the gh-pages branch, point Pages at it.
+bash scripts/enable-pages.sh
+```
+
+Pass `--repo owner/name` to either script if you're not running from inside the
+repo. `--protect-prod` adds a required reviewer + main-only branch policy to the
+`production` environment (needs a public repo or a paid plan for private repos).
+
+### Manual (equivalent, via the UI)
+
+1. **Create the three Environments.** Repo → **Settings → Environments** → create
    `production`, `staging`, and `development`. For **each** one add:
 
    | Type | Name | Example value |
@@ -101,11 +137,12 @@ never overwrites a real environment.
    | Variable | `S3_BUCKET` | `my-bucket-name` |
    | Secret | `AWS_SECRET` | `placeholder-secret` |
 
-   (Settings → Environments → *select env* → **Add variable** / **Add secret**.)
+2. **Enable Pages.** Repo → **Settings → Pages** → *Build and deployment* →
+   **Source: Deploy from a branch** → branch **`gh-pages`**, folder **`/ (root)`**.
+   (The `gh-pages` branch is created automatically by the first deploy.)
 
 3. **(Recommended) Protect production.** On the `production` environment, add a
-   **required reviewer** and/or restrict it to the `main` branch, so production
-   deploys must be approved.
+   **required reviewer** and/or restrict it to the `main` branch.
 
 No other secrets are needed — `GITHUB_TOKEN` is provided automatically and is
 what publishes to the `gh-pages` branch.

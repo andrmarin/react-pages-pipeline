@@ -57,7 +57,10 @@ jobs:
           fetch-depth: 2 # need the previous commit to diff against
       - id: diff
         run: |
-          if git diff --name-only HEAD~1 HEAD | grep -qx 'version.txt'; then
+          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then
+            # Initial commit (no parent) — treat as the first release.
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only HEAD~1 HEAD | grep -qx 'version.txt'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
