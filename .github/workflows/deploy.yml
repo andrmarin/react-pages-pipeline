@@ -6,9 +6,8 @@ name: Deploy
 #   push develop                  -> development  (/development/)
 #   push main                     -> staging      (/staging/)
 #   push main + version.txt bump  -> production   (/production/) + git tag
-#   manual (workflow_dispatch)    -> any branch to any environment
-#       - main/develop go to the env's own subfolder
-#       - feature branches go to /feature-<branch>/
+#   manual (workflow_dispatch)    -> deploy any branch to the chosen environment
+#                                    (publishes to that env's folder; no feature paths)
 on:
   push:
     branches: [main, develop]
@@ -43,7 +42,6 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: development
-      subfolder: development
 
   # --- Automatic: main -> staging --------------------------------------------
   staging:
@@ -53,7 +51,6 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: staging
-      subfolder: staging
 
   # --- Detect a version.txt change on main to gate production ----------------
   check-version:
@@ -85,36 +82,17 @@ jobs:
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: production
-      subfolder: production
       create_tag: true
 
-  # --- Manual: compute the target subfolder from the selected branch ---------
-  prep-manual:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      subfolder: ${{ steps.compute.outputs.subfolder }}
-    steps:
-      - id: compute
-        env:
-          BRANCH: ${{ github.ref_name }}
-          ENVIRONMENT: ${{ inputs.environment }}
-        run: |
-          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
-            echo "subfolder=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
-          else
-            SAFE=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
-            echo "subfolder=feature-$SAFE" >> "$GITHUB_OUTPUT"
-          fi
-
   # --- Manual: deploy the selected branch to the chosen environment ----------
+  # Publishes to the chosen environment's folder (development | staging |
+  # production) regardless of which branch was selected — no feature paths.
   deploy-manual:
-    needs: prep-manual
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
     uses: ./.github/workflows/build-deploy.yml
     with:
       environment: ${{ inputs.environment }}
-      subfolder: ${{ needs.prep-manual.outputs.subfolder }}
       ref: ${{ github.ref }}
       create_tag: ${{ inputs.environment == 'production' }}
