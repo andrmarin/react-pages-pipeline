@@ -1,0 +1,120 @@
+name: Build and Deploy
+
+# Reusable workflow: builds the app for one environment and publishes it to a
+# subfolder of the gh-pages branch. Called by deploy.yml. Not triggered directly.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment to use (production | staging | development)
+        required: true
+        type: string
+      subfolder:
+        description: Subfolder on the Pages site to publish into (e.g. staging, feature-foo)
+        required: true
+        type: string
+      ref:
+        description: Git ref to build (defaults to the triggering ref)
+        required: false
+        type: string
+        default: ''
+      create_tag:
+        description: Create an immutable v<version> git tag (production releases only)
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    # Binds AWS_KEY / S3_BUCKET (environment variables) and AWS_SECRET
+    # (environment secret) to this job from the selected GitHub Environment.
+    environment: ${{ inputs.environment }}
+
+    # Only the permission needed to push to gh-pages and create the release tag.
+    permissions:
+      contents: write
+
+    # Never let two deploys to the SAME subfolder run at once (avoids clobbering).
+    concurrency:
+      group: pages-${{ inputs.subfolder }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0 # full history so we can read/create tags
+
+      - name: Read version from version.txt
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` runs `tsc` first, so a type error fails the deploy here.
+      - name: Type-check and build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/${{ inputs.subfolder }}/
+          VITE_APP_ENV: ${{ inputs.environment }}
+          VITE_AWS_KEY: ${{ vars.AWS_KEY }}
+          VITE_AWS_SECRET: ${{ secrets.AWS_SECRET }}
+          VITE_S3_BUCKET: ${{ vars.S3_BUCKET }}
+        run: npm run build
+
+      # Production only: tag the released commit. Fails loudly if the tag already
+      # exists, which guarantees version.txt was bumped for this release.
+      - name: Create release tag
+        if: ${{ inputs.create_tag }}
+        env:
+          VERSION: v${{ steps.version.outputs.value }}
+        run: |
+          git fetch --tags --quiet
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag $VERSION already exists. Bump version.txt before deploying to production."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
+
+      # keep_files: true means we only touch our own subfolder and leave the
+      # other environments' folders on gh-pages untouched.
+      - name: Publish to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          destination_dir: ${{ inputs.subfolder }}
+          keep_files: true
+          commit_message: "deploy ${{ inputs.environment }} -> ${{ inputs.subfolder }} (v${{ steps.version.outputs.value }})"
+
+      - name: Job summary
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          SUBFOLDER: ${{ inputs.subfolder }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          URL="https://${OWNER,,}.github.io/${REPO}/${SUBFOLDER}/"
+          {
+            echo "### Deployed 🚀"
+            echo ""
+            echo "| Field | Value |"
+            echo "| --- | --- |"
+            echo "| Environment | \`${ENVIRONMENT}\` |"
+            echo "| Subfolder | \`${SUBFOLDER}\` |"
+            echo "| Version | \`${VERSION}\` |"
+            echo "| URL | ${URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"

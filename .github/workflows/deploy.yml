@@ -1,0 +1,103 @@
+name: Deploy
+
+# Trigger workflow. Maps branches/manual runs to environments and delegates the
+# actual build + publish to the reusable build-deploy.yml workflow.
+#
+#   push develop                  -> development  (/development/)
+#   push main                     -> staging      (/staging/)
+#   push main + version.txt bump  -> production   (/production/) + git tag
+#   manual (workflow_dispatch)    -> any branch to any environment
+#       - main/develop go to the env's own subfolder
+#       - feature branches go to /feature-<branch>/
+on:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        required: true
+        options:
+          - development
+          - staging
+          - production
+
+# Serialize runs of this trigger workflow per ref.
+concurrency:
+  group: deploy-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # --- Automatic: develop -> development -------------------------------------
+  development:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    uses: ./.github/workflows/build-deploy.yml
+    with:
+      environment: development
+      subfolder: development
+
+  # --- Automatic: main -> staging --------------------------------------------
+  staging:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/build-deploy.yml
+    with:
+      environment: staging
+      subfolder: staging
+
+  # --- Detect a version.txt change on main to gate production ----------------
+  check-version:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need the previous commit to diff against
+      - id: diff
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -qx 'version.txt'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --- Automatic: main + version bump -> production --------------------------
+  production:
+    needs: check-version
+    if: needs.check-version.outputs.changed == 'true'
+    uses: ./.github/workflows/build-deploy.yml
+    with:
+      environment: production
+      subfolder: production
+      create_tag: true
+
+  # --- Manual: compute the target subfolder from the selected branch ---------
+  prep-manual:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      subfolder: ${{ steps.compute.outputs.subfolder }}
+    steps:
+      - id: compute
+        env:
+          BRANCH: ${{ github.ref_name }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
+            echo "subfolder=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          else
+            SAFE=$(echo "$BRANCH" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            echo "subfolder=feature-$SAFE" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --- Manual: deploy the selected branch to the chosen environment ----------
+  deploy-manual:
+    needs: prep-manual
+    uses: ./.github/workflows/build-deploy.yml
+    with:
+      environment: ${{ inputs.environment }}
+      subfolder: ${{ needs.prep-manual.outputs.subfolder }}
+      ref: ${{ github.ref }}
+      create_tag: ${{ inputs.environment == 'production' }}
