@@ -91,6 +91,22 @@ jobs:
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
+      # Emit a shields.io "endpoint" JSON so the README badges can show the
+      # version currently deployed to this environment. Published alongside the
+      # build at /<environment>/version.json.
+      - name: Write version badge endpoint
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          case "$ENVIRONMENT" in
+            production) COLOR=brightgreen ;;
+            staging)    COLOR=orange ;;
+            *)          COLOR=blue ;;
+          esac
+          printf '{"schemaVersion":1,"label":"%s","message":"v%s","color":"%s","cacheSeconds":300}\n' \
+            "$ENVIRONMENT" "$VERSION" "$COLOR" > dist/version.json
+
       # keep_files: true means we only touch this environment's folder and leave
       # the other environments' folders on gh-pages untouched.
       - name: Publish to GitHub Pages
