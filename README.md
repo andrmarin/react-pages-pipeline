@@ -120,11 +120,17 @@ bash scripts/setup-environments.sh --protect-prod  # also require a reviewer on 
 
 # 2. After your first deploy has created the gh-pages branch, point Pages at it.
 bash scripts/enable-pages.sh
+
+# 3. (Optional) Protect main: block deletion, force-pushes, and direct pushes
+#    (changes must go through a PR), enforced for admins too.
+bash scripts/protect-main.sh
 ```
 
-Pass `--repo owner/name` to either script if you're not running from inside the
+Pass `--repo owner/name` to any script if you're not running from inside the
 repo. `--protect-prod` adds a required reviewer + main-only branch policy to the
 `production` environment (needs a public repo or a paid plan for private repos).
+`scripts/protect-main.sh` also needs a public repo or a paid plan, and accepts
+`--branch <name>` and `--reviews <N>` (default 0 required approvals).
 
 ### Manual (equivalent, via the UI)
 
