@@ -1,5 +1,14 @@
 # react-pages-pipeline
 
+[![Deploy](https://github.com/andrmarin/react-pages-pipeline/actions/workflows/deploy.yml/badge.svg)](https://github.com/andrmarin/react-pages-pipeline/actions/workflows/deploy.yml)
+
+**Deployed versions:**
+[![development](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrmarin.github.io%2Freact-pages-pipeline%2Fdevelopment%2Fversion.json)](https://andrmarin.github.io/react-pages-pipeline/development/)
+[![staging](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrmarin.github.io%2Freact-pages-pipeline%2Fstaging%2Fversion.json)](https://andrmarin.github.io/react-pages-pipeline/staging/)
+[![production](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrmarin.github.io%2Freact-pages-pipeline%2Fproduction%2Fversion.json)](https://andrmarin.github.io/react-pages-pipeline/production/)
+
+<sub>Each badge reads `/<env>/version.json`, written by the deploy workflow, and updates as new versions ship.</sub>
+
 A minimal **Vite + React + TypeScript** single page that displays some text, the
 app version, the active environment, and a few placeholder environment variables
 (`AWS_KEY`, `AWS_SECRET`, `S3_BUCKET`). It ships with a **GitHub Actions release
