@@ -63,12 +63,16 @@ There are exactly three subfolders — `development`, `staging`, `production` �
 and nothing else. Vite's `base` is set per deploy so assets resolve correctly
 under each subfolder.
 
-| Trigger | Environment | Published to |
+| Trigger | Deploys to | Version gate |
 | --- | --- | --- |
-| Push to `develop` | `development` | `…/development/` |
-| Push to `main` | `staging` | `…/staging/` |
-| Push to `main` **that changes `version.txt`** | `production` | `…/production/` + git tag `desktop-v<version>` |
-| Manual run (any branch) | chosen env | that env's folder |
+| Push to `develop` | `development` | deploys **iff** `version.txt` > development's deployed version, else **skips** ✓ green |
+| Push to `main` | `staging` **and** `production` | each deploys **iff** `version.txt` > *its own* deployed version, else **skips** ✓ green; production also tags `desktop-v<version>` |
+| Manual run (any branch) | chosen env | **fails** ✗ unless `version.txt` > that env's deployed version |
+
+**Every deploy must raise the version.** The gate compares `version.txt` against
+the version currently deployed to the target environment (read from that env's
+`version.json` on `gh-pages`). No bump → no deploy. See
+[Versioning & the version gate](#versioning--the-version-gate).
 
 URLs follow this pattern (lowercase owner):
 
@@ -83,32 +87,46 @@ e.g. https://<owner>.github.io/react-pages-pipeline/staging/
 The pipeline is split in two workflows:
 
 - [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml) — triggers and
-  routing (branch → environment, manual dispatch, version-bump detection).
+  routing (branch → environment, manual dispatch).
 - [`.github/workflows/build-deploy.yml`](./.github/workflows/build-deploy.yml) —
   reusable build + publish job (used once per environment, no duplication).
 
-### Versioning & release tags
+### Versioning & the version gate
 
-[`version.txt`](./version.txt) is the single source of truth. On a **production**
-deploy the pipeline creates an immutable git tag **`desktop-v<version>`** — the
-`desktop-` prefix is this project's name, so multiple projects in the repo tag
-independently (e.g. `desktop-v1.0.0`, `mobile-v2.3.1`). If that tag already
-exists the production deploy **fails**, which guarantees you bumped the version
-for every release and gives you a tagged commit to diff or roll back to.
+[`version.txt`](./version.txt) is the single source of truth, and **every deploy
+must raise it.** Each environment remembers the version it's running in its
+`version.json` on `gh-pages` (the same file that powers the badge above). Before
+building, the reusable workflow's **version gate** compares `version.txt` to that
+baseline:
 
-The project name is passed to the reusable workflow as `project: desktop` from
-every call in [`deploy.yml`](./.github/workflows/deploy.yml); a new project gets
-its own `deploy.yml` with a different name.
+- `version.txt` **>** the env's deployed version (semver) → deploy proceeds.
+- otherwise → **no deploy**: an automatic push **skips cleanly** (job stays green
+  with a "Skipped — version not increased" summary); a manual run **fails** with
+  a clear error.
 
-**To cut a production release:** bump `version.txt` (e.g. `1.0.0` → `1.1.0`) and
-push to `main`. This deploys staging *and* production, and tags `desktop-v1.1.0`.
+The check is **per environment**, so you can promote the *same* version through
+`development` → `staging` → `production`, but you can never redeploy a version an
+environment already has. The job summary always shows `current → new` and whether
+it deployed or skipped, so the outcome is obvious at a glance.
+
+On a **production** deploy the pipeline also creates an immutable git tag
+**`desktop-v<version>`**. The `desktop-` prefix is this project's name (passed as
+`project: desktop` from [`deploy.yml`](./.github/workflows/deploy.yml)), so
+multiple projects in the repo tag independently (e.g. `desktop-v1.0.0`,
+`mobile-v2.3.1`).
+
+**To ship a new version:** bump `version.txt` (e.g. `1.0.0` → `1.1.0`) and push
+to `main` — staging and production each deploy `1.1.0` and production tags
+`desktop-v1.1.0`. Pushes that don't bump the version simply don't deploy.
 
 ### Deploy any branch manually
 
 GitHub → **Actions** → **Deploy** → **Run workflow** → pick the **branch** and a
 target **environment**. The selected branch is built and published to that
 environment's folder (`development` / `staging` / `production`), replacing
-whatever was there. Deploying to `production` also creates the `desktop-v<version>` tag.
+whatever was there — **but only if `version.txt` is greater than that env's
+deployed version; otherwise the run fails**. Deploying to `production` also
+creates the `desktop-v<version>` tag.
 
 ---
 

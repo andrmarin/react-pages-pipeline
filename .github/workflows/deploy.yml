@@ -1,18 +1,21 @@
 name: Deploy
 
 # Trigger workflow for the "desktop" project. Maps branches/manual runs to
-# environments and delegates the build + publish to the reusable build-deploy.yml.
+# environments and delegates the build + publish (and the version gate) to the
+# reusable build-deploy.yml.
 #
-# Monorepo note: this is one project's deploy workflow. Its project name (used as
-# the release-tag prefix, e.g. desktop-v1.0.0) is passed to build-deploy.yml as
-# `project: desktop` on every call below. A new project gets its own copy of this
-# file with a different project name.
+# Release policy: EVERY deploy must raise version.txt above the version currently
+# deployed to that environment (tracked per env). Otherwise:
+#   - automatic deploys (push)            -> skip cleanly (job stays green)
+#   - manual deploys (workflow_dispatch)  -> fail loudly
 #
-#   push develop                  -> development  (/development/)
-#   push main                     -> staging      (/staging/)
-#   push main + version.txt bump  -> production   (/production/) + tag desktop-v<version>
-#   manual (workflow_dispatch)    -> deploy any branch to the chosen environment
-#                                    (publishes to that env's folder; no feature paths)
+# Monorepo note: this is one project's deploy workflow. Its project name (the
+# release-tag prefix, e.g. desktop-v1.0.0) is passed as `project: desktop` on
+# every call below. A new project gets its own copy of this file.
+#
+#   push develop  -> development  (deploys iff version.txt > development's version)
+#   push main     -> staging AND production (each deploys iff version.txt > its own version)
+#   manual        -> chosen env  (FAILS if version.txt is not greater for that env)
 on:
   push:
     branches: [main, develop]
@@ -48,6 +51,7 @@ jobs:
     with:
       environment: development
       project: desktop
+      on_no_bump: skip
 
   # --- Automatic: main -> staging --------------------------------------------
   staging:
@@ -58,32 +62,14 @@ jobs:
     with:
       environment: staging
       project: desktop
+      on_no_bump: skip
 
-  # --- Detect a version.txt change on main to gate production ----------------
-  check-version:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2 # need the previous commit to diff against
-      - id: diff
-        run: |
-          if ! git rev-parse HEAD~1 >/dev/null 2>&1; then
-            # Initial commit (no parent) — treat as the first release.
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif git diff --name-only HEAD~1 HEAD | grep -qx 'version.txt'; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  # --- Automatic: main + version bump -> production --------------------------
+  # --- Automatic: main -> production -----------------------------------------
+  # No separate version-change detection needed: the reusable workflow's version
+  # gate deploys only when version.txt exceeds production's deployed version, and
+  # skips cleanly otherwise.
   production:
-    needs: check-version
-    if: needs.check-version.outputs.changed == 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
     uses: ./.github/workflows/build-deploy.yml
@@ -91,10 +77,12 @@ jobs:
       environment: production
       project: desktop
       create_tag: true
+      on_no_bump: skip
 
   # --- Manual: deploy the selected branch to the chosen environment ----------
   # Publishes to the chosen environment's folder (development | staging |
   # production) regardless of which branch was selected — no feature paths.
+  # Fails if version.txt isn't greater than that env's deployed version.
   deploy-manual:
     if: github.event_name == 'workflow_dispatch'
     permissions:
@@ -105,3 +93,4 @@ jobs:
       project: desktop
       ref: ${{ github.ref }}
       create_tag: ${{ inputs.environment == 'production' }}
+      on_no_bump: fail
