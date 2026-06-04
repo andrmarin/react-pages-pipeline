@@ -4,19 +4,15 @@
 [![staging](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrmarin.github.io%2Freact-pages-pipeline%2Fstaging%2Fversion.json)](https://andrmarin.github.io/react-pages-pipeline/staging/)
 [![development](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrmarin.github.io%2Freact-pages-pipeline%2Fdevelopment%2Fversion.json)](https://andrmarin.github.io/react-pages-pipeline/development/)
 
-<sub>Each badge reads `/<env>/version.json`, written by the deploy workflow, and updates as new versions ship.</sub>
+<sub>Note: each badge reads `/<env>/version.json`, written by the deploy workflow, and updates as new versions ship.</sub>
+
+## Overview
 
 A minimal **Vite + React + TypeScript** single page that displays some text, the
 app version, the active environment, and a few placeholder environment variables
 (`AWS_KEY`, `AWS_SECRET`, `S3_BUCKET`). It ships with a **GitHub Actions release
 pipeline** that deploys to **GitHub Pages** across three environments
 (production / staging / development).
-
-> ⚠️ **Security note.** Everything passed as a `VITE_*` variable is baked into
-> the static JavaScript bundle and is **publicly visible** in the browser. The
-> AWS values here are placeholders. `AWS_SECRET` is stored as a GitHub *secret*
-> only to demonstrate the secrets plumbing — never expose a real secret in a
-> client-side build.
 
 ---
 
